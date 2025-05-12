@@ -2,96 +2,53 @@
 #include <SDL2/SDL_image.h>
 #include <SDL2/SDL_timer.h>
 #include <bits/stdc++.h>
+#include "utils.h"
+
 using namespace std;
 
-class vertex
+bool loadOBJ(const string &filename, vector<vertex> &outVertices, vector<vector<int>> &outFaces, float zOffset = 10.0f)
 {
-public:
-    double globalheight = 1000;
-    double x = 0;
-    double y = 0;
-    double z = 0;
-    vector<double> pt = {x, y, z};
-
-    vertex(vector<double> i)
+    ifstream file(filename);
+    if (!file.is_open())
     {
-        x = i[0];
-        y = i[1];
-        z = i[2];
-        cout << "Vertex input successful" << endl;
+        cerr << "Failed to open OBJ file: " << filename << endl;
+        return false;
     }
 
-    vertex projected()
+    string line;
+    while (getline(file, line))
     {
-        float fov = 30.0f;
-        float scale = globalheight / 62.0f;
-        vertex v = *this;
+        istringstream iss(line);
+        string type;
+        iss >> type;
 
-        // Perspective projection based on the Z value
-        float invZ = 1.0f / (z + globalheight / 200); // Fix Z to account for the global height
-        v.x = x * invZ * fov * scale + globalheight / 2.0f;
-        v.y = -y * invZ * fov * scale + globalheight / 2.0f;
-
-        // Prevent the cube from drifting
-        return v;
+        if (type == "v")
+        {
+            float x, y, z;
+            iss >> x >> y >> z;
+            outVertices.emplace_back(vertex({x, y, z + zOffset}));
+        }
+        else if (type == "f")
+        {
+            vector<int> face;
+            string vert;
+            while (iss >> vert)
+            {
+                // Handle formats like f 1, f 1/1, f 1/1/1
+                int idx = stoi(vert.substr(0, vert.find('/')));
+                face.push_back(idx - 1); // .obj is 1-indexed
+            }
+            if (face.size() >= 3)
+            {
+                // Triangulate if necessary
+                for (size_t i = 1; i < face.size() - 1; ++i)
+                {
+                    outFaces.push_back({face[0], face[i], face[i + 1]});
+                }
+            }
+        }
     }
-
-    void rotateX(float theta, vertex center)
-    {
-        x -= center.x;
-        y -= center.y;
-        z -= center.z;
-        double y0 = y, z0 = z;
-        y = y0 * cos(theta) - z0 * sin(theta);
-        z = y0 * sin(theta) + z0 * cos(theta);
-    }
-
-    void rotateY(float theta, vertex center)
-    {
-        x -= center.x;
-        y -= center.y;
-        z -= center.z;
-        double x0 = x, z0 = z;
-        x = x0 * cos(theta) + z0 * sin(theta);
-        z = -x0 * sin(theta) + z0 * cos(theta);
-    }
-
-    void rotateZ(float theta, vertex center)
-    {
-        x -= center.x;
-        y -= center.y;
-        z -= center.z;
-        double x0 = x, y0 = y;
-        x = x0 * cos(theta) - y0 * sin(theta);
-        y = x0 * sin(theta) + y0 * cos(theta);
-    }
-};
-
-vertex calculateCenter(const vector<vertex> &vertices)
-{
-    double xSum = 0, ySum = 0, zSum = 0;
-    int count = vertices.size();
-    for (const auto &v : vertices)
-    {
-        xSum += v.x;
-        ySum += v.y;
-        zSum += v.z;
-    }
-    return vertex({xSum / count, ySum / count, zSum / count});
-}
-
-void plot(vertex A, vertex B, SDL_Renderer *rend)
-{
-    SDL_SetRenderDrawColor(rend, 255, 255, 255, 255);
-    SDL_RenderDrawLine(rend, A.x, A.y, B.x, B.y);
-}
-
-void plotTriangle(vertex A, vertex B, vertex C, SDL_Renderer *rend)
-{
-    SDL_SetRenderDrawColor(rend, 255, 255, 255, 255);
-    SDL_RenderDrawLine(rend, A.x, A.y, B.x, B.y);
-    SDL_RenderDrawLine(rend, C.x, C.y, B.x, B.y);
-    SDL_RenderDrawLine(rend, A.x, A.y, C.x, C.y);
+    return true;
 }
 
 int main(int argc, char *argv[])
@@ -118,41 +75,20 @@ int main(int argc, char *argv[])
     // creates a renderer to render our images
     SDL_Renderer *rend = SDL_CreateRenderer(win, -1, render_flags);
 
-    int running = 1;
-    SDL_Event event;
-    float zOffset = 6.0f;
+    bool running = true;
 
-    vertex v0 = vertex({-1, -1, -1 + zOffset});
-    vertex v1 = vertex({1, -1, -1 + zOffset});
-    vertex v2 = vertex({1, 1, -1 + zOffset});
-    vertex v3 = vertex({-1, 1, -1 + zOffset});
-    vertex v4 = vertex({-1, -1, 1 + zOffset});
-    vertex v5 = vertex({1, -1, 1 + zOffset});
-    vertex v6 = vertex({1, 1, 1 + zOffset});
-    vertex v7 = vertex({-1, 1, 1 + zOffset});
+    SDL_Event event;
+    float zOffset = 10.0f;
+
+    vector<vertex> VertexBuffer;
+    vector<vector<int>> EdgeBuffer;
+    if (!loadOBJ("plant.obj", VertexBuffer, EdgeBuffer))
+    {
+        cerr << "Failed to load model!" << endl;
+        return 1;
+    }
 
     float theta = 0;
-
-    vector<vertex> VertexBuffer = {v0, v1, v2, v3, v4, v5, v6, v7};
-
-    vector<vector<int>> EdgeBuffer = {
-        {0, 1, 2},
-        {0, 2, 3},
-        // Front face
-        {4, 5, 6},
-        {4, 6, 7},
-        // Left face
-        {0, 4, 7},
-        {0, 7, 3},
-        // Right face
-        {1, 5, 6},
-        {1, 6, 2},
-        // Top face
-        {3, 2, 6},
-        {3, 6, 7},
-        // Bottom face
-        {0, 1, 5},
-        {0, 5, 4}};
 
     while (running)
     {

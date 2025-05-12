@@ -6,7 +6,7 @@ CXXFLAGS := `sdl2-config --cflags` -ggdb3 -O0 -std=c++17 -Wall
 LDFLAGS := `sdl2-config --libs` -lSDL2_image -lm
 
 # Source and output
-SRCS := main.cpp
+SRCS := main.cpp utils.cpp
 OBJS := $(SRCS:.cpp=.o)
 EXEC := sdl_app
 
